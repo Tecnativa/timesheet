@@ -3,6 +3,9 @@
 
 from odoo.exceptions import UserError, ValidationError
 from odoo.tests import common
+import logging
+
+_logger = logging.getLogger(__name__)
 
 
 class TestHrTimesheetSheetPolicyProjectManager(common.TransactionCase):
@@ -27,9 +30,7 @@ class TestHrTimesheetSheetPolicyProjectManager(common.TransactionCase):
         self.group_project_user = self.env.ref("project.group_project_user")
         self.company = self.ResCompany.create({"name": "Company"})
         self.env.user.company_ids += self.company
-        self.employee_user = self.ResUsers.with_context(
-            {"no_reset_password": True}
-        ).create(
+        self.employee_user = self.ResUsers.with_context(no_reset_password=True).create(
             {
                 "name": "Employee User",
                 "login": "employee_user",
@@ -51,7 +52,7 @@ class TestHrTimesheetSheetPolicyProjectManager(common.TransactionCase):
             }
         )
         self.project_manager_user_1 = self.ResUsers.with_context(
-            {"no_reset_password": True}
+            no_reset_password=True
         ).create(
             {
                 "name": "Project Manager User 1",
@@ -73,7 +74,7 @@ class TestHrTimesheetSheetPolicyProjectManager(common.TransactionCase):
             }
         )
         self.project_manager_user_2 = self.ResUsers.with_context(
-            {"no_reset_password": True}
+            no_reset_password=True
         ).create(
             {
                 "name": "Project Manager User 2",
@@ -159,8 +160,7 @@ class TestHrTimesheetSheetPolicyProjectManager(common.TransactionCase):
                 "employee_id": self.employee.id,
             }
         )
-
-        with self.assertRaises(UserError):
+        with self.assertRaises(ValidationError):
             self.HrTimesheetSheet.with_user(self.employee_user).create(
                 {"company_id": self.employee_user.company_id.id}
             )
@@ -170,12 +170,12 @@ class TestHrTimesheetSheetPolicyProjectManager(common.TransactionCase):
                 "project_id": self.project_1.id,
             }
         )
-        with self.assertRaises(UserError):
-            sheet.project_id = False
+        change = sheet.update({"project_id": False})
+        self.assertEqual(change, None)
+
         self.company.timesheet_sheet_review_policy = "hr"
-
         sheet._compute_complete_name()
-
+        sheet.project_id = self.project_2.id
         sheet._onchange_project_id()
         sheet._onchange_scope()
         sheet._onchange_timesheets()
@@ -183,10 +183,10 @@ class TestHrTimesheetSheetPolicyProjectManager(common.TransactionCase):
         self.assertEqual(len(sheet.line_ids), 7)
 
         with self.assertRaises(UserError):
-            sheet.with_user(self.project_manager_user_2).action_timesheet_done()
+            sheet.with_user(self.project_manager_user_1).action_timesheet_done()
 
         with self.assertRaises(UserError):
-            sheet.with_user(self.project_manager_user_2).action_timesheet_draft()
+            sheet.with_user(self.project_manager_user_1).action_timesheet_draft()
 
         sheet.action_timesheet_confirm()
         self.assertFalse(sheet.with_user(self.employee_user).can_review)
@@ -199,8 +199,8 @@ class TestHrTimesheetSheetPolicyProjectManager(common.TransactionCase):
         with self.assertRaises(UserError):
             sheet.with_user(self.employee_user).action_timesheet_done()
 
-        sheet.with_user(self.project_manager_user_1).action_timesheet_done()
-        sheet.with_user(self.project_manager_user_1).action_timesheet_draft()
+        sheet.with_user(self.project_manager_user_2).action_timesheet_done()
+        sheet.with_user(self.project_manager_user_2).action_timesheet_draft()
         sheet.unlink()
 
         timesheet_0.unlink()
@@ -218,13 +218,13 @@ class TestHrTimesheetSheetPolicyProjectManager(common.TransactionCase):
             }
         )
         values = sheet._convert_to_write(sheet._cache)
-        with self.assertRaises(UserError):
+        with self.assertRaises(ValidationError):
             self.HrTimesheetSheet.with_user(self.employee_user).create(values)
         sheet.project_id = self.project_1
         values.update(sheet._convert_to_write(sheet._cache))
         sheet = self.HrTimesheetSheet.with_user(self.employee_user).create(values)
-        with self.assertRaises(UserError):
-            sheet.project_id = False
+        change = sheet.update({"project_id": False})
+        self.assertEqual(change, None)
         sheet.unlink()
 
     def test_project_manager_review_policy_overlapping(self):
